@@ -19,17 +19,39 @@ parser = ArgumentParser()
 parser.add_argument('-p', '--prompt', dest='prompt', help='The prompt used to segment images, passed to GroundedSAM.', required=True, type=str)
 parser.add_argument('-i', '--input', dest='input', help='Input folder with images to proces.', required=True, type=str)
 parser.add_argument('-o', '--output', dest='output', help='Output folder for processed images.', required=True, type=str)
-parser.add_argument('-m', '--masks', dest='masks', help='Folder to store the masks in..', required=False, default=None, type=str)
 parser.add_argument('-y', '--embed_y', dest='embed_y', help='Height (Y) of the centered embedding.', required=False, default=800, type=int)
 parser.add_argument('-x', '--embed_x', dest='embed_x', help='Width (X) of the centered embedding.', required=False, default=800, type=int)
+
+# Additional Arguments for existing Anomaly (Ground truth) masks.
+parser.add_argument('-m', '--masks', dest='masks', help='[Optional] input folder with masks that shall also be cropped. Masks need to have the same filename is the files in the input-folder.', required=False, default=None, type=str)
+parser.add_argument('-s', '--suffix', dest='mask_suffix', help='[Optional] An optional suffix used in masks\' filenames.', required=False, type=str)
+parser.add_argument('-e', '--ext', dest='mask_ext', help='[Optional] The filename suffix for masks\'s filenames.', required=False, type=str)
 
 args = parser.parse_args()
 
 prompt = f'{args.prompt}'.strip()
+embed_y, embed_x = args.embed_y, args.embed_x
 input_folder = Path(args.input)
 output_folder = Path(args.output)
-masks_folder = Path(args.masks)
-embed_y, embed_x = args.embed_y, args.embed_x
+
+# Existing masks:
+use_masks = args.masks is not None
+masks_folder = None if not use_masks else Path(args.masks)
+masks_suffix = args.mask_suffix
+masks_ext = args.mask_ext
+
+
+# We will have up to 6 output folders.
+output_folder_blanked = output_folder.joinpath('./blanked').resolve()
+output_folder_fgmasks = output_folder.joinpath('./fg_masks').resolve()
+output_folder_ce_blanked = output_folder.joinpath('./ce_blanked').resolve()
+output_folder_ce_fgmasks = output_folder.joinpath('./ce_fg_masks').resolve()
+output_folder_ce_original = output_folder.joinpath('./ce_original').resolve()
+output_folder_ce_masks = output_folder.joinpath('./ce_masks').resolve()
+# Make sure the folders exist:
+list([of.mkdir(exist_ok=True) for of in [output_folder, output_folder_blanked, output_folder_fgmasks, output_folder_ce_blanked, output_folder_ce_fgmasks, output_folder_ce_original, output_folder_ce_masks]])
+
+
 
 
 if not (input_folder.exists() and input_folder.is_dir()):
@@ -37,19 +59,12 @@ if not (input_folder.exists() and input_folder.is_dir()):
     exit(-1)
 else:
     print(f'Reading images from directory: {Color.YELLOW}{str(input_folder.resolve())}{Color.OFF}')
-
-if not (output_folder.exists() and output_folder.is_dir()):
-    print(f'{Color.RED}The given output does not exist or is not a directory.{Color.OFF}')
-    exit(-2)
-else:
-    print(f'Writing output images to directory: {Color.YELLOW}{str(output_folder.resolve())}{Color.OFF}')
-
-if not (masks_folder.exists() and masks_folder.is_dir()):
-    print(f'{Color.RED}The given output folder for masks does not exist or is not a directory.{Color.OFF}')
-    exit(-3)
-else:
-    print(f'Writing masks to directory: {Color.YELLOW}{str(masks_folder.resolve())}{Color.OFF}')
-
+if use_masks:
+    if not (masks_folder.exists() and masks_folder.is_dir()):
+        print(f'{Color.RED}The given output does not exist or is not a directory.{Color.OFF}')
+        exit(-1)
+    else:
+        print(f'Reading image masks from directory: {Color.YELLOW}{str(masks_folder.resolve())}{Color.YELLOW}')
 
 
 
@@ -135,16 +150,38 @@ def center_embed(img: np.ndarray, height: int, width: int) -> np.ndarray:
 
 
 def process_image(file: Path, prompt: str) -> None:
-    output_image_path = output_folder.joinpath(f'{file.stem}.png').resolve()
-    if output_image_path.exists():
+    f = f'{file.stem}.png'
+    out_blanked = output_folder_blanked.joinpath(f).resolve()
+    if out_blanked.exists():
         print(f'{Color.RED}Output image for file {file.name} already exists, skipping...{Color.OFF}')
         return
-    output_image_path_blanked = output_folder.joinpath(f'{file.stem}_blank.png').resolve()
     
-    output_mask_path = masks_folder.joinpath(f'{file.stem}.png').resolve()
-    input_image: np.ndarray = cv2.imread(str(file.resolve()))
+    print(f'{Color.GREEN}Processing image {file.name} ...{Color.OFF}')
+    
+    # The file name will always be the same, but the output folder varies.
+    out_fgmask = output_folder_fgmasks.joinpath(f).resolve()
+    out_blanked = output_folder_blanked.joinpath(f).resolve()
+    out_ce_blanked = output_folder_ce_blanked.joinpath(f).resolve()
+    out_ce_fgmask = output_folder_ce_fgmasks.joinpath(f).resolve()
+    out_ce_original = output_folder_ce_original.joinpath(f).resolve()
+    out_ce_mask = output_folder_ce_masks.joinpath(f).resolve()
+
+
+    input_mask: Path = None
+    if use_masks:
+        # Some times, the existing (anomaly) masks have a different suffix and/or extension.
+        # That is handled here. For an image foo.png, the anomaly mask could be foo_defect.jpg.
+        temp = file.stem
+        if masks_suffix:
+            temp = f'{temp}{masks_suffix}'
+        temp = f'{temp}.{masks_ext if masks_ext else file.suffix}'
+        input_mask = masks_folder.joinpath(temp)
+    if use_masks and not (input_mask.exists() and input_mask.is_file()):
+        raise Exception(f'{Color.RED}The mask for image {file.name} does not exist.{Color.OFF}')
+    
+    input_original: np.ndarray = cv2.imread(str(file.resolve()))
     detections = grounding_dino_model.predict_with_classes(
-        image=input_image, classes=[prompt], box_threshold=BOX_THRESHOLD, text_threshold=BOX_THRESHOLD)
+        image=input_original, classes=[prompt], box_threshold=BOX_THRESHOLD, text_threshold=BOX_THRESHOLD)
     
     # Check whether we actually detected something:
     if len(detections.area) == 0:
@@ -162,37 +199,58 @@ def process_image(file: Path, prompt: str) -> None:
 
     detections.mask = segment(
         sam_predictor=sam_predictor,
-        image=cv2.cvtColor(input_image, cv2.COLOR_BGR2RGB),
+        image=cv2.cvtColor(input_original, cv2.COLOR_BGR2RGB),
         xyxy=detections.xyxy)
-    
 
     highest_confidence_idx = np.argmax(detections.confidence)
-    mask_logical = detections.mask[highest_confidence_idx]
-    # Let's crop down the mask accurate to the pixel; detections.xyxy[highest_confidence_idx].astype(int) is not as accurate!
-    mask = 255 * mask_logical # Use mask with values as 0 or 255
-    x1, y1, x2, y2 = xyxy(mask=mask)
+    fg_mask_logical = detections.mask[highest_confidence_idx]
+    fg_mask = 255 * fg_mask_logical # Use mask with values as 0 or 255
 
-    # Let's also create a blanked-out version of the original image, where all pixels outside the mask are set to a solid color.
+    # Let's create and store a blanked-out version of the original image:
     use_bg_color = [0, 0, 0] # purple is [191., 64., 191.]
-    input_image_blank = input_image.copy()
-    input_image_blank[~mask_logical, :] = np.array(use_bg_color)
+    input_blank = input_original.copy()
+    input_blank[~fg_mask_logical, :] = np.array(use_bg_color)
+    cv2.imwrite(str(out_blanked), input_blank)
+    print(f'{Color.GREEN}Exported blanked image to {str(out_blanked)}.{Color.OFF}')
 
-    # Crop the mask and the image, too:
-    mask = mask[y1:y2, x1:x2]
-    input_image = input_image[y1:y2, x1:x2]
-    input_image_blank = input_image_blank[y1:y2, x1:x2]
+    # Let's save the foreground mask (uncropped, original resolution):
+    cv2.imwrite(str(out_fgmask), fg_mask)
+    print(f'{Color.GREEN}Exported foreground mask to {str(out_fgmask)}.{Color.OFF}')
 
-    # Center-embed image and mask, then save them:
-    mask = center_embed(img=mask, height=embed_y, width=embed_x)
-    input_image = center_embed(img=input_image, height=embed_y, width=embed_x)
-    input_image_blank = center_embed(img=input_image_blank, height=embed_y, width=embed_x)
 
-    cv2.imwrite(str(output_image_path), input_image)
-    print(f'{Color.GREEN}Exported processed image for {file.name} to {str(output_image_path)}{Color.OFF}')
-    cv2.imwrite(str(output_image_path_blanked), input_image_blank)
-    print(f'{Color.GREEN} `- Exported blanked image for {file.name} to {str(output_image_path_blanked)}{Color.OFF}')
-    cv2.imwrite(str(output_mask_path), mask)
-    print(f'{Color.GREEN} `- Exported foreground mask for {file.name} to {str(output_mask_path)}{Color.OFF}')
+    # Let's create cropped versions. Actually, we will center and embed all images
+    # into a black background (center-embedded, that is what "ce" stands for).
+    # Let's crop down the mask accurate to the pixel; detections.xyxy[highest_confidence_idx].astype(int) is not as accurate!
+    x1, y1, x2, y2 = xyxy(mask=fg_mask)
+
+    # Next, store a cropped version of the original image:
+    input_ce_original = input_original[y1:y2, x1:x2]
+    input_ce_original = center_embed(img=input_ce_original, height=embed_y, width=embed_x)
+    cv2.imwrite(str(out_ce_original), input_ce_original)
+    print(f'{Color.GREEN}Exported center-embedded original image to {str(out_ce_blanked)}.{Color.OFF}')
+
+    # Next, we store a cropped version of the foreground mask.
+    fg_mask_ce = fg_mask[y1:y2, x1:x2]
+    fg_mask_ce = center_embed(img=fg_mask_ce, height=embed_y, width=embed_x)
+    cv2.imwrite(str(out_ce_fgmask), fg_mask_ce)
+    print(f'{Color.GREEN}Exported center-embedded foreground mask to {str(out_ce_blanked)}.{Color.OFF}')
+
+    # Let's also create a cropped and blanked-out version of the original image,
+    # where all pixels outside the mask are set to a solid color.
+    input_ce_blank = input_blank.copy()
+    input_ce_blank[~fg_mask_logical, :] = np.array(use_bg_color)
+    input_ce_blank = input_ce_blank[y1:y2, x1:x2]
+    input_ce_blank = center_embed(img=input_ce_blank, height=embed_y, width=embed_x)
+    cv2.imwrite(str(out_ce_blanked), input_ce_blank)
+    print(f'{Color.GREEN}Exported center-embedded blanked image to {str(out_ce_blanked)}.{Color.OFF}')
+
+
+    # Lastly, if a mask existed previously, store a center-cropped version of it, too:
+    if use_masks:
+        input_ce_mask = cv2.imread(str(input_mask))[y1:y2, x1:x2]
+        input_ce_mask = center_embed(img=input_ce_mask, height=embed_y, width=embed_x)
+        cv2.imwrite(str(out_ce_mask), input_ce_mask)
+        print(f'{Color.GREEN}Exported center-embedded mask to {str(out_ce_blanked)}.{Color.OFF}')
 
 
 print(f'{Color.MAGENTA}Starting to process images...{Color.OFF}')
