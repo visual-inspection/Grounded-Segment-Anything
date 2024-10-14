@@ -1,0 +1,93 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "preprocess_sam",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "cwd": "${fileDirname}",
+            "args": [
+                "--prompt", "the object held by the fixture",
+                "--input", "/mnt/d/lnu/Datasets/g-link_anomaly_masked/temp",
+                "--output", "/mnt/d/lnu/Datasets/g-link_anomaly_masked/temp/p"
+            ]
+        },
+        {
+            "name": "preprocess_sam_masks",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "cwd": "${fileDirname}",
+            "args": [
+                // "--prompt", "Metal part below the blue fitting",
+                "--prompt", "the curved metal part in the center of the image without the blue ring",
+                "--input", "/mnt/d/lnu/Datasets/g-link_anomaly/test/defect",
+                "--output", "/mnt/d/lnu/Datasets/g-link_anomaly_masked/",
+                "--masks", "/mnt/d/lnu/Datasets/g-link_anomaly/ground_truth/defect",
+                "--suffix", "_defect",
+                "--ext", "png"
+            ]
+        },
+        {
+            "name": "preprocess_sam_with_fg_masks",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "cwd": "${fileDirname}",
+            "args": [
+                "--prompt", "Metal part below the blue fitting",
+                "--input", "/mnt/d/lnu/Datasets/g-link_anomaly/train/good/",
+                "--output", "/mnt/d/lnu/temp/",
+                "--masks", "/mnt/d/lnu/temp/fg_masks",
+                "--embed_y", "800",
+                "--embed_x", "800"
+            ]
+        },
+        {
+            "name": "SAM Demo",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "cwd": "${fileDirname}",
+            "args": [
+                "--config", "GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py",
+                "--grounded_checkpoint", "groundingdino_swint_ogc.pth",
+                "--sam_checkpoint", "sam_vit_h_4b8939.pth",
+                "--use_sam_hq",
+                "--input_image", "assets/demo1.jpg",
+                "--output_dir", "outputs",
+                "--box_threshold", "0.3",
+                "--text_threshold", "0.25",
+                "--text_prompt", "bear",
+                "--device", "cuda"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "2nd SAM Demo",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "cwd": "${fileDirname}",
+            "args": [
+                "--config", "GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py",
+                "--grounded_checkpoint", "groundingdino_swint_ogc.pth",
+                "--sam_checkpoint", "sam_vit_h_4b8939.pth",
+                "--use_sam_hq",
+                "--input_image", "assets/metalhook.jpg",
+                "--output_dir", "outputs",
+                "--box_threshold", "0.3",
+                "--text_threshold", "0.25",
+                "--text_prompt", "Detect and Segment Everything",
+                "--device", "cuda"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        }
+    ]
+}
