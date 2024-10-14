@@ -25,10 +25,14 @@ from torch.autograd import Function
 from torch.autograd.function import once_differentiable
 from torch.nn.init import constant_, xavier_uniform_
 
-try:
-    from groundingdino import _C
-except:
-    warnings.warn("Failed to load custom C++ ops. Running on CPU mode Only!")
+# See https://mmcv.readthedocs.io/en/latest/_modules/mmcv/ops/multi_scale_deform_attn.html
+from mmcv.utils import ext_loader
+_C = ext_loader.load_ext(
+    '_ext', ['ms_deform_attn_backward', 'ms_deform_attn_forward'])
+# try:
+#     from GroundingDINO.groundingdino import _C
+# except:
+#     warnings.warn("Failed to load custom C++ ops. Running on CPU mode Only!")
 
 
 # helpers

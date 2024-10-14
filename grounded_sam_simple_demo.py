@@ -5,8 +5,8 @@ import supervision as sv
 import torch
 import torchvision
 
-from groundingdino.util.inference import Model
-from segment_anything import sam_model_registry, SamPredictor
+from GroundingDINO.groundingdino.util.inference import Model
+from segment_anything.segment_anything import sam_model_registry, SamPredictor
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -28,8 +28,14 @@ sam_predictor = SamPredictor(sam)
 
 
 # Predict classes and hyper-param for GroundingDINO
-SOURCE_IMAGE_PATH = "./assets/demo2.jpg"
-CLASSES = ["The running dog"]
+# SOURCE_IMAGE_PATH = "./assets/metalhook.jpg"
+# SOURCE_IMAGE_PATH = "./assets/metal-anomaly.jpg"
+SOURCE_IMAGE_PATH = "/mnt/d/lnu/Datasets/g-link_anomaly_masked/temp/2be61e29-cfc8-4da5-b90f-e9271a90fabd-0017.png"
+# CLASSES = ["Metal hook without blue clamp"]
+# CLASSES = ["The contiguous curved metal part attached to the blue fitting"]
+CLASSES = ["the curved metal part in the center of the image"]
+
+# CLASSES = ["Anomalies in the metal"]
 BOX_THRESHOLD = 0.25
 TEXT_THRESHOLD = 0.25
 NMS_THRESHOLD = 0.8
@@ -55,7 +61,7 @@ labels = [
 annotated_frame = box_annotator.annotate(scene=image.copy(), detections=detections, labels=labels)
 
 # save the annotated grounding dino image
-cv2.imwrite("groundingdino_annotated_image.jpg", annotated_frame)
+cv2.imwrite("groundingdino_annotated_image.png", annotated_frame)
 
 
 # NMS post process
@@ -103,5 +109,13 @@ labels = [
 annotated_image = mask_annotator.annotate(scene=image.copy(), detections=detections)
 annotated_image = box_annotator.annotate(scene=annotated_image, detections=detections, labels=labels)
 
+highest_confidence = np.argmax(detections.confidence)
+masked_image = image.copy()
+use_bg_color = [0, 0, 0] # purple is [191., 64., 191.]
+masked_image[~detections.mask[highest_confidence], :] = np.array(use_bg_color)
+x1, y1, x2, y2 = detections.xyxy[highest_confidence].astype(int)
+masked_image = masked_image[y1:y2, x1:x2]
+cv2.imwrite("grounded_sam_masked_image.png", masked_image)
+
 # save the annotated grounded-sam image
-cv2.imwrite("grounded_sam_annotated_image.jpg", annotated_image)
+cv2.imwrite("grounded_sam_annotated_image.png", annotated_image)

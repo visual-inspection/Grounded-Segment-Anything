@@ -6,20 +6,22 @@ from PIL import Image
 
 import torch
 
-from groundingdino.util.inference import Model
-from segment_anything import sam_model_registry, SamPredictor
+from GroundingDINO.groundingdino.util.inference import Model
+from segment_anything.segment_anything import sam_model_registry, SamPredictor
 
 # Tag2Text
-# from ram.models import tag2text_caption
+from ram.models import tag2text
 from ram.models import ram
-# from ram import inference_tag2text
-from ram import inference_ram
+from ram.models import ram_plus
+from ram import inference_tag2text
+from ram import inference_ram, inference_ram_openset
 import torchvision
 import torchvision.transforms as TS
 
 
 # Hyper-Params
-SOURCE_IMAGE_PATH = "./assets/demo9.jpg"
+#SOURCE_IMAGE_PATH = "./assets/demo9.jpg"
+SOURCE_IMAGE_PATH = "/mnt/d/lnu/Datasets/g-link_anomaly_masked/temp/2be61e29-cfc8-4da5-b90f-e9271a90fabd-0010.png"
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 GROUNDING_DINO_CONFIG_PATH = "GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py"
@@ -29,9 +31,10 @@ SAM_ENCODER_VERSION = "vit_h"
 SAM_CHECKPOINT_PATH = "./sam_vit_h_4b8939.pth"
 
 TAG2TEXT_CHECKPOINT_PATH = "./tag2text_swin_14m.pth"
-RAM_CHECKPOINT_PATH = "./ram_swin_large_14m.pth"
+#RAM_CHECKPOINT_PATH = "./ram_swin_large_14m.pth"
+RAM_CHECKPOINT_PATH = "./ram_plus_swin_large_14m.pth"
 
-TAG2TEXT_THRESHOLD = 0.64
+TAG2TEXT_THRESHOLD = 0.32
 BOX_THRESHOLD = 0.2
 TEXT_THRESHOLD = 0.2
 IOU_THRESHOLD = 0.5
@@ -62,21 +65,20 @@ DELETE_TAG_INDEX = []  # filter out attributes and action which are difficult to
 for idx in range(3012, 3429):
     DELETE_TAG_INDEX.append(idx)
 
-# tag2text_model = tag2text_caption(
-#     pretrained=TAG2TEXT_CHECKPOINT_PATH,
-#     image_size=384,
-#     vit='swin_b',
-#     delete_tag_index=DELETE_TAG_INDEX
-# )
-# # threshold for tagging
-# # we reduce the threshold to obtain more tags
-# tag2text_model.threshold = TAG2TEXT_THRESHOLD
-# tag2text_model.eval()
-# tag2text_model = tag2text_model.to(DEVICE)
+tag2text_model = tag2text(
+    pretrained=TAG2TEXT_CHECKPOINT_PATH,
+    image_size=384,
+    vit='swin_b',
+    delete_tag_index=DELETE_TAG_INDEX
+)
+# threshold for tagging
+# we reduce the threshold to obtain more tags
+tag2text_model.threshold = TAG2TEXT_THRESHOLD
+tag2text_model.eval()
+tag2text_model = tag2text_model.to(DEVICE)
 
-ram_model = ram(pretrained=RAM_CHECKPOINT_PATH,
-                                        image_size=384,
-                                        vit='swin_l')
+#ram_model = ram(pretrained=RAM_CHECKPOINT_PATH, image_size=384, vit='swin_l')
+ram_model = ram_plus(pretrained=RAM_CHECKPOINT_PATH, vit='swin_l', image_size=384)
 ram_model.eval()
 ram_model = ram_model.to(DEVICE)
 
@@ -88,8 +90,10 @@ image_pillow = image_pillow.resize((384, 384))
 image_pillow = transform(image_pillow).unsqueeze(0).to(DEVICE)
 
 specified_tags='None'
-# res = inference_tag2text(image_pillow , tag2text_model, specified_tags)
-res = inference_ram(image_pillow , ram_model)
+res = inference_tag2text(image_pillow , tag2text_model, specified_tags)
+# res = inference_ram(image_pillow , ram_model)
+temp = inference_ram(model=ram_model, image=image_pillow)
+res = inference_ram_openset(model=ram_model, image=image_pillow)
 
 # Currently ", " is better for detecting single tags
 # while ". " is a little worse in some case
